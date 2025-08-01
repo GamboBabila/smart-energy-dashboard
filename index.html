@@ -1,4 +1,4 @@
-﻿// ========== User Login Logic ==========
+// ========== User Login Logic ========== 
 let users = JSON.parse(localStorage.getItem("users")) || {
   admin: { password: "admin123", role: "admin" },
   user: { password: "user123", role: "user" },
@@ -13,9 +13,11 @@ function login() {
     const role = users[username].role;
     sessionStorage.setItem("role", role);
     sessionStorage.setItem("username", username);
+
     document.getElementById("login-container").classList.add("hidden");
     document.getElementById("dashboard").classList.remove("hidden");
     document.getElementById("user-info").textContent = `Logged in as: ${username} (${role})`;
+
     if (role === "admin") {
       document.getElementById("admin-controls").classList.remove("hidden");
     }
@@ -54,13 +56,13 @@ function register() {
   loginError.textContent = "Account created! You can now login.";
 }
 
-// ========== MQTT Logic ==========
+// ========== MQTT Logic ========== 
 let client;
 function initMQTT() {
   const broker = "wss://io.adafruit.com:443";
   const options = {
-    username: "your_username", // Replace with your Adafruit IO username
-    password: "your_aio_key",  // Replace with your Adafruit IO AIO key
+    username: "your_username",
+    password: "your_aio_key",
   };
   client = mqtt.connect(broker, options);
 
@@ -87,24 +89,58 @@ function initMQTT() {
   });
 }
 
-function toggleLoad(load, state) {
-  client.publish(`your_username/feeds/${load}`, state);
+// ========== Load Control and Logging ========== 
+async function toggleLoad(load, state) {
+  const username = sessionStorage.getItem("username") || "unknown";
+  const doc = {
+    username: username,
+    load: load,
+    action: state === "1" ? "ON" : "OFF",
+    timestamp: new Date().toISOString(),
+  };
+
+  // Uncomment if using MQTT
+  // client.publish(`your_username/feeds/${load}`, state);
+
+  try {
+    await firebase.firestore().collection("load_control_logs").add(doc);
+    console.log("Control action logged:", doc);
+  } catch (e) {
+    console.error("Error saving log:", e);
+  }
 }
 
 function reconnectAfterTamper() {
-  client.publish("your_username/feeds/tamper", "reset");
+  // Uncomment if using MQTT
+  // client.publish("your_username/feeds/tamper", "reset");
 }
 
-// ========== History Logging ==========
+// ========== History Logging ========== 
 function logHistory(kwh) {
   const list = document.getElementById("history-list");
   const time = new Date().toLocaleString();
   const li = document.createElement("li");
   li.textContent = `${time} - ${kwh} kWh`;
   list.prepend(li);
-
-  // Store latest 20 readings
   if (list.children.length > 20) {
     list.removeChild(list.lastChild);
   }
 }
+
+// ========== Session Check on Load ========== 
+window.addEventListener("load", () => {
+  const role = sessionStorage.getItem("role");
+  const username = sessionStorage.getItem("username");
+
+  if (!role || !username) {
+    document.getElementById("login-container").classList.remove("hidden");
+    document.getElementById("dashboard").classList.add("hidden");
+  } else {
+    document.getElementById("login-container").classList.add("hidden");
+    document.getElementById("dashboard").classList.remove("hidden");
+    document.getElementById("user-info").textContent = `Logged in as: ${username} (${role})`;
+    if (role === "admin") {
+      document.getElementById("admin-controls").classList.remove("hidden");
+    }
+  }
+});
