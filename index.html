@@ -1,146 +1,251 @@
-// ========== User Login Logic ========== 
-let users = JSON.parse(localStorage.getItem("users")) || {
-  admin: { password: "admin123", role: "admin" },
-  user: { password: "user123", role: "user" },
-};
-
-function login() {
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const loginError = document.getElementById("login-error");
-
-  if (users[username] && users[username].password === password) {
-    const role = users[username].role;
-    sessionStorage.setItem("role", role);
-    sessionStorage.setItem("username", username);
-
-    document.getElementById("login-container").classList.add("hidden");
-    document.getElementById("dashboard").classList.remove("hidden");
-    document.getElementById("user-info").textContent = `Logged in as: ${username} (${role})`;
-
-    if (role === "admin") {
-      document.getElementById("admin-controls").classList.remove("hidden");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Energy Meter Dashboard</title>
+  <style>
+    body {
+      background-color: #000;
+      font-family: "Courier New", Courier, monospace;
+      color: #0f0;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: start;
+      height: 100vh;
     }
-    initMQTT();
-  } else {
-    loginError.textContent = "Invalid login credentials.";
-  }
-}
 
-function logout() {
-  sessionStorage.clear();
-  document.getElementById("dashboard").classList.add("hidden");
-  document.getElementById("login-container").classList.remove("hidden");
-  document.getElementById("username").value = "";
-  document.getElementById("password").value = "";
-  document.getElementById("login-error").textContent = "";
-}
-
-function register() {
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const loginError = document.getElementById("login-error");
-
-  if (!username || !password) {
-    loginError.textContent = "Username and password are required.";
-    return;
-  }
-
-  if (users[username]) {
-    loginError.textContent = "User already exists.";
-    return;
-  }
-
-  users[username] = { password, role: "user" };
-  localStorage.setItem("users", JSON.stringify(users));
-  loginError.textContent = "Account created! You can now login.";
-}
-
-// ========== MQTT Logic ========== 
-let client;
-function initMQTT() {
-  const broker = "wss://io.adafruit.com:443";
-  const options = {
-    username: "your_username",
-    password: "your_aio_key",
-  };
-  client = mqtt.connect(broker, options);
-
-  client.on("connect", () => {
-    console.log("MQTT connected");
-    const topics = ["voltage", "current", "kwh", "tamper", "short"];
-    topics.forEach((t) => client.subscribe(`your_username/feeds/${t}`));
-  });
-
-  client.on("message", (topic, message) => {
-    const val = message.toString();
-    if (topic.includes("voltage")) {
-      document.getElementById("voltage").textContent = val;
-    } else if (topic.includes("current")) {
-      document.getElementById("current").textContent = val;
-    } else if (topic.includes("kwh")) {
-      document.getElementById("kwh").textContent = val;
-      logHistory(val);
-    } else if (topic.includes("tamper")) {
-      document.getElementById("tamper").textContent = `Tamper: ${val}`;
-    } else if (topic.includes("short")) {
-      document.getElementById("short").textContent = `Short Circuit: ${val}`;
+    .container {
+      width: 90%;
+      max-width: 800px;
+      margin-top: 30px;
+      background-color: #111;
+      padding: 20px;
+      border: 2px solid #0f0;
+      border-radius: 8px;
     }
-  });
-}
 
-// ========== Load Control and Logging ========== 
-async function toggleLoad(load, state) {
-  const username = sessionStorage.getItem("username") || "unknown";
-  const doc = {
-    username: username,
-    load: load,
-    action: state === "1" ? "ON" : "OFF",
-    timestamp: new Date().toISOString(),
-  };
-
-  // Uncomment if using MQTT
-  // client.publish(`your_username/feeds/${load}`, state);
-
-  try {
-    await firebase.firestore().collection("load_control_logs").add(doc);
-    console.log("Control action logged:", doc);
-  } catch (e) {
-    console.error("Error saving log:", e);
-  }
-}
-
-function reconnectAfterTamper() {
-  // Uncomment if using MQTT
-  // client.publish("your_username/feeds/tamper", "reset");
-}
-
-// ========== History Logging ========== 
-function logHistory(kwh) {
-  const list = document.getElementById("history-list");
-  const time = new Date().toLocaleString();
-  const li = document.createElement("li");
-  li.textContent = `${time} - ${kwh} kWh`;
-  list.prepend(li);
-  if (list.children.length > 20) {
-    list.removeChild(list.lastChild);
-  }
-}
-
-// ========== Session Check on Load ========== 
-window.addEventListener("load", () => {
-  const role = sessionStorage.getItem("role");
-  const username = sessionStorage.getItem("username");
-
-  if (!role || !username) {
-    document.getElementById("login-container").classList.remove("hidden");
-    document.getElementById("dashboard").classList.add("hidden");
-  } else {
-    document.getElementById("login-container").classList.add("hidden");
-    document.getElementById("dashboard").classList.remove("hidden");
-    document.getElementById("user-info").textContent = `Logged in as: ${username} (${role})`;
-    if (role === "admin") {
-      document.getElementById("admin-controls").classList.remove("hidden");
+    .hidden {
+      display: none;
     }
-  }
-});
+
+    h2 {
+      text-align: center;
+    }
+
+    input, button {
+      padding: 10px;
+      font-size: 1rem;
+      margin: 5px;
+      width: calc(100% - 22px);
+    }
+
+    button {
+      background-color: #0f0;
+      color: #000;
+      border: none;
+      cursor: pointer;
+    }
+
+    .status, .controls, .history, .auth-section {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #000;
+      border: 1px dashed #0f0;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    .load-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .load-buttons button {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Login/Register Section -->
+    <div id="login-container" class="auth-section">
+      <h2>Login / Register</h2>
+      <input type="text" id="username" placeholder="Username" />
+      <input type="password" id="password" placeholder="Password" />
+      <button onclick="login()">Login</button>
+      <button onclick="register()">Register</button>
+      <p id="login-error" style="color: red;"></p>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="hidden">
+      <div class="auth-section">
+        <p id="user-info"></p>
+        <button onclick="logout()">Logout</button>
+      </div>
+
+      <div class="status">
+        <h2>Live Readings</h2>
+        <p>Voltage: <span id="voltage">0</span> V</p>
+        <p>Current: <span id="current">0</span> A</p>
+        <p>kWh: <span id="kwh">0</span></p>
+        <p id="tamper">Tamper: None</p>
+        <p id="short">Short Circuit: None</p>
+      </div>
+
+      <div class="controls">
+        <h2>Remote Load Control</h2>
+        <div class="load-buttons">
+          <button onclick="toggleLoad('loadA', 'ON')">Load A ON</button>
+          <button onclick="toggleLoad('loadA', 'OFF')">Load A OFF</button>
+        </div>
+        <div class="load-buttons">
+          <button onclick="toggleLoad('loadB', 'ON')">Load B ON</button>
+          <button onclick="toggleLoad('loadB', 'OFF')">Load B OFF</button>
+        </div>
+        <div id="admin-controls" class="hidden">
+          <h3>Admin Controls</h3>
+          <button onclick="reconnectAfterTamper()">Reconnect After Tamper</button>
+        </div>
+      </div>
+
+      <div class="history">
+        <h2>Consumption History</h2>
+        <ul id="history-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyATRVjV0GBdd0y4tTNe6QamW5HsYXrik_0",
+      authDomain: "smart-energy-meter-62de6.firebaseapp.com",
+      projectId: "smart-energy-meter-62de6",
+      storageBucket: "smart-energy-meter-62de6.appspot.com",
+      messagingSenderId: "804577573242",
+      appId: "1:804577573242:web:78254728df1882cc5bbec3",
+      measurementId: "G-FXTNN32FP6"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth();
+
+    const loginContainer = document.getElementById("login-container");
+    const dashboard = document.getElementById("dashboard");
+    const loginError = document.getElementById("login-error");
+
+    async function login() {
+      const email = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        loginError.textContent = err.message;
+      }
+    }
+
+    async function register() {
+      const email = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        loginError.textContent = "Registered! Now login.";
+      } catch (err) {
+        loginError.textContent = err.message;
+      }
+    }
+
+    function logout() {
+      signOut(auth);
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loginContainer.classList.add("hidden");
+        dashboard.classList.remove("hidden");
+        document.getElementById("user-info").textContent = `Logged in as: ${user.email}`;
+        if (user.email === "admin@example.com") {
+          document.getElementById("admin-controls").classList.remove("hidden");
+        } else {
+          document.getElementById("admin-controls").classList.add("hidden");
+        }
+      } else {
+        dashboard.classList.add("hidden");
+        loginContainer.classList.remove("hidden");
+      }
+    });
+
+    // Simulated data updates (replace with ESP32 values)
+    function simulateData() {
+      const voltage = (210 + Math.random() * 20).toFixed(1);
+      const current = (1 + Math.random() * 5).toFixed(2);
+      const kwh = (Math.random() * 10).toFixed(2);
+      const tamper = Math.random() > 0.95 ? "Yes" : "No";
+      const short = Math.random() > 0.98 ? "Yes" : "No";
+
+      document.getElementById("voltage").textContent = voltage;
+      document.getElementById("current").textContent = current;
+      document.getElementById("kwh").textContent = kwh;
+      document.getElementById("tamper").textContent = `Tamper: ${tamper}`;
+      document.getElementById("short").textContent = `Short Circuit: ${short}`;
+      logHistory(kwh);
+    }
+
+    setInterval(simulateData, 3000); // Simulate every 3s
+
+    async function toggleLoad(load, state) {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const ref = collection(db, "controlActions");
+      await addDoc(ref, {
+        user: user.email,
+        load: load,
+        state: state,
+        timestamp: new Date()
+      });
+      alert(`${load} turned ${state}`);
+    }
+
+    async function reconnectAfterTamper() {
+      const user = auth.currentUser;
+      if (!user || user.email !== "admin@example.com") return;
+
+      const ref = collection(db, "adminActions");
+      await addDoc(ref, {
+        user: user.email,
+        action: "reconnectAfterTamper",
+        timestamp: new Date()
+      });
+      alert("Tamper reset sent.");
+    }
+
+    function logHistory(kwh) {
+      const list = document.getElementById("history-list");
+      const li = document.createElement("li");
+      li.textContent = `${new Date().toLocaleString()} - ${kwh} kWh`;
+      list.prepend(li);
+      if (list.children.length > 20) list.removeChild(list.lastChild);
+    }
+  </script>
+</body>
+</html>
